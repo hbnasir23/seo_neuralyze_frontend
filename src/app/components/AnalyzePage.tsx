@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import { Download, FileDown, Zap, TrendingUp, AlertTriangle } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Download, FileDown, Zap, TrendingUp, AlertTriangle, Loader2 } from 'lucide-react';
 
-type AuditStatus = 'idle' | 'running' | 'completed';
+type AuditStatus = 'idle' | 'running' | 'completed' | 'error';
 
 interface ConflictRow {
   similarity: number;
@@ -13,49 +13,73 @@ interface ConflictRow {
 export default function AnalyzePage() {
   const [domain, setDomain] = useState('');
   const [status, setStatus] = useState<AuditStatus>('idle');
-  const [progress, setProgress] = useState(0);
-  const [currentStep, setCurrentStep] = useState(0);
+  const [progressMessage, setProgressMessage] = useState('Initializing...');
+  const [errorMsg, setErrorMsg] = useState('');
   const [results, setResults] = useState<ConflictRow[]>([]);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const mockResults: ConflictRow[] = [
-    { similarity: 94.3, priorityUrl: '/news/election-security-concerns', conflictingUrl: '/politics/voting-system-vulnerabilities', systemAction: '301 redirect' },
-    { similarity: 89.7, priorityUrl: '/blog/seo-best-practices-2026', conflictingUrl: '/resources/ultimate-seo-guide', systemAction: 'consolidate' },
-    { similarity: 87.2, priorityUrl: '/analysis/climate-policy-framework', conflictingUrl: '/opinion/environmental-legislation-impact', systemAction: '301 redirect' },
-    { similarity: 84.5, priorityUrl: '/tech/ai-regulation-challenges', conflictingUrl: '/policy/artificial-intelligence-governance', systemAction: 'canonical tag' },
-    { similarity: 82.1, priorityUrl: '/business/startup-funding-trends', conflictingUrl: '/economy/venture-capital-landscape', systemAction: 'consolidate' },
-    { similarity: 79.8, priorityUrl: '/health/mental-wellness-strategies', conflictingUrl: '/lifestyle/psychological-health-tips', systemAction: '301 redirect' },
-    { similarity: 77.3, priorityUrl: '/education/online-learning-evolution', conflictingUrl: '/technology/digital-education-platforms', systemAction: 'canonical tag' },
-  ];
+  useEffect(() => {
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, []);
 
-  const steps = [
-    '[1/4] Discovering URLs (Stealth Browser)...',
-    '[2/4] Scrape Content...',
-    '[3/4] Vectorizing with SBERT...',
-    '[4/4] Generating Conflict Roadmap...',
-  ];
-
-  const runAudit = () => {
+  const runAudit = async () => {
     if (!domain.trim()) return;
 
     setStatus('running');
-    setCurrentStep(0);
-    setProgress(0);
+    setErrorMsg('');
+    setProgressMessage('Launching audit...');
+    setResults([]);
 
-    const totalSteps = 4;
-    const stepDuration = 1500;
+    try {
+      const postResponse = await fetch(`https://harisbinnasir-seo-neuralize.hf.space/audit?domain=${encodeURIComponent(domain)}`, {
+        method: 'POST',
+      });
+      
+      if (!postResponse.ok) {
+        throw new Error('Failed to launch audit');
+      }
 
-    for (let i = 0; i < totalSteps; i++) {
-      setTimeout(() => {
-        setCurrentStep(i);
-        setProgress(((i + 1) / totalSteps) * 100);
+      const postData = await postResponse.json();
+      const jobId = postData.job_id;
 
-        if (i === totalSteps - 1) {
-          setTimeout(() => {
+      intervalRef.current = setInterval(async () => {
+        try {
+          const getResponse = await fetch(`https://harisbinnasir-seo-neuralize.hf.space/results/${jobId}`);
+          if (!getResponse.ok) {
+            throw new Error('Failed to fetch results');
+          }
+          const getData = await getResponse.json();
+
+          if (getData.status === 'running') {
+            setProgressMessage(getData.progress || 'Analyzing...');
+          } else if (getData.status === 'completed') {
+            if (intervalRef.current) clearInterval(intervalRef.current);
             setStatus('completed');
-            setResults(mockResults);
-          }, stepDuration);
+            
+            const mappedResults: ConflictRow[] = (getData.conflicts || []).map((c: any) => ({
+                similarity: c.similarity,
+                priorityUrl: c.url_a,
+                conflictingUrl: c.url_b,
+                systemAction: c.action
+            }));
+            setResults(mappedResults);
+          } else if (getData.status === 'error') {
+            if (intervalRef.current) clearInterval(intervalRef.current);
+            setStatus('error');
+            setErrorMsg(getData.error || 'An error occurred during the audit');
+          }
+        } catch (err: any) {
+          if (intervalRef.current) clearInterval(intervalRef.current);
+          setStatus('error');
+          setErrorMsg(err.message || 'Error occurred while polling');
         }
-      }, i * stepDuration);
+      }, 3000);
+
+    } catch (err: any) {
+      setStatus('error');
+      setErrorMsg(err.message || 'Failed to start audit');
     }
   };
 
@@ -85,7 +109,8 @@ export default function AnalyzePage() {
                 />
                 <button
                   onClick={runAudit}
-                  className="px-8 sm:px-10 py-3 sm:py-4 bg-black text-white border-none cursor-pointer hover:bg-[#1a1a1a] transition-all flex items-center justify-center gap-2 w-full sm:w-auto"
+                  disabled={!domain.trim()}
+                  className="px-8 sm:px-10 py-3 sm:py-4 bg-black text-white border-none cursor-pointer hover:bg-[#1a1a1a] transition-all flex items-center justify-center gap-2 w-full sm:w-auto disabled:opacity-50"
                   style={{ fontWeight: 500 }}
                 >
                   <Zap size={18} />
@@ -142,52 +167,33 @@ export default function AnalyzePage() {
                 </p>
               </div>
 
-              <div className="space-y-3 sm:space-y-4 font-mono text-[11px] sm:text-[13px] mb-6 sm:mb-8">
-                {steps.map((step, index) => (
-                  <div
-                    key={index}
-                    className={`flex items-center gap-2 sm:gap-3 p-2 sm:p-3 border transition-all ${
-                      index === currentStep
-                        ? 'border-black bg-black text-white'
-                        : index < currentStep
-                        ? 'border-[#E5E7EB] text-[#6B7280]'
-                        : 'border-[#E5E7EB] text-[#9CA3AF]'
-                    }`}
-                  >
-                    <div className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 flex items-center justify-center text-[10px] sm:text-[11px] flex-shrink-0 ${
-                      index === currentStep
-                        ? 'border-white text-white'
-                        : index < currentStep
-                        ? 'border-black bg-black text-white'
-                        : 'border-[#E5E7EB]'
-                    }`}>
-                      {index < currentStep ? '✓' : index + 1}
-                    </div>
-                    <span className="break-words">{step}</span>
-                  </div>
-                ))}
+              <div className="flex flex-col items-center justify-center space-y-4 py-8">
+                <Loader2 size={48} className="animate-spin text-black" />
+                <p className="font-mono text-black text-[14px] sm:text-[16px] text-center">
+                  {progressMessage}
+                </p>
               </div>
+            </div>
+          </div>
+        )}
 
-              {/* Progress Bar */}
-              <div className="relative">
-                <div className="w-full bg-[#E5E7EB] h-3 border border-[#E5E7EB]">
-                  <div
-                    className="bg-black h-full transition-all duration-500"
-                    style={{ width: `${progress}%` }}
-                  />
-                </div>
-                <div className="flex justify-between mt-2">
-                  <span className="text-[11px] text-[#6B7280] font-mono">
-                    0%
-                  </span>
-                  <span className="text-[14px] text-black font-mono" style={{ fontWeight: 600 }}>
-                    {Math.round(progress)}%
-                  </span>
-                  <span className="text-[11px] text-[#6B7280] font-mono">
-                    100%
-                  </span>
-                </div>
-              </div>
+        {/* Error State */}
+        {status === 'error' && (
+          <div className="max-w-4xl mx-auto mb-8">
+            <div className="border-2 border-red-500 bg-red-50 p-6 sm:p-10 relative text-center">
+              <AlertTriangle size={48} className="text-red-500 mx-auto mb-4" />
+              <h2 className="text-red-700 text-[20px] sm:text-[24px] mb-2 font-mono" style={{ fontWeight: 600 }}>
+                Audit Failed
+              </h2>
+              <p className="text-red-600 font-mono text-[14px]">
+                {errorMsg}
+              </p>
+              <button
+                onClick={() => setStatus('idle')}
+                className="mt-6 px-6 py-2 bg-red-600 text-white font-mono text-[14px] hover:bg-red-700 transition-colors"
+              >
+                Try Again
+              </button>
             </div>
           </div>
         )}
@@ -308,8 +314,6 @@ export default function AnalyzePage() {
                   setStatus('idle');
                   setDomain('');
                   setResults([]);
-                  setProgress(0);
-                  setCurrentStep(0);
                 }}
                 className="px-6 sm:px-8 py-3 border-2 border-black text-black text-[13px] sm:text-[14px] cursor-pointer bg-transparent hover:bg-black hover:text-white transition-all"
                 style={{ fontWeight: 500 }}
