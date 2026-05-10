@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
-import { Download, FileDown, Zap, TrendingUp, AlertTriangle, Loader2, ExternalLink } from 'lucide-react';
+import { Download, FileDown, Zap, TrendingUp, AlertTriangle, Loader2, ExternalLink, CheckCircle } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 
 type AuditStatus = 'idle' | 'running' | 'completed' | 'error';
 
@@ -362,6 +363,34 @@ export default function AnalyzePage() {
                 style={{ fontWeight: 500 }}
               >
                 schedule enterprise demo
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Empty Results Zone */}
+        {status === 'completed' && results.length === 0 && (
+          <div className="max-w-4xl mx-auto mb-8">
+            <Alert className="border-2 border-green-600 bg-green-50 p-6 sm:p-8 text-left items-start">
+              <CheckCircle className="h-6 w-6 text-green-600" />
+              <AlertTitle className="text-green-800 text-[18px] sm:text-[20px] font-mono mb-2" style={{ fontWeight: 600 }}>
+                Audit complete: No semantic conflicts were detected on this domain path
+              </AlertTitle>
+              <AlertDescription className="text-green-700 font-mono text-[14px]">
+                The AI model determined that the analyzed pages have distinct structural semantics.
+              </AlertDescription>
+            </Alert>
+            <div className="mt-8 sm:mt-10 flex flex-col sm:flex-row justify-center gap-4">
+              <button
+                onClick={() => {
+                  setStatus('idle');
+                  setDomain('');
+                  setResults([]);
+                }}
+                className="px-6 sm:px-8 py-3 border-2 border-black text-black text-[13px] sm:text-[14px] cursor-pointer bg-transparent hover:bg-black hover:text-white transition-all"
+                style={{ fontWeight: 500 }}
+              >
+                analyze another domain
               </button>
             </div>
           </div>
