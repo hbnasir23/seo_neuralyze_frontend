@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
-import { Download, FileDown, Zap, TrendingUp, AlertTriangle, Loader2 } from 'lucide-react';
+import { Download, FileDown, Zap, TrendingUp, AlertTriangle, Loader2, ExternalLink } from 'lucide-react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 type AuditStatus = 'idle' | 'running' | 'completed' | 'error';
 
@@ -81,6 +83,43 @@ export default function AnalyzePage() {
       setStatus('error');
       setErrorMsg(err.message || 'Failed to start audit');
     }
+  };
+
+  const downloadCSV = () => {
+    if (results.length === 0) return;
+    const header = ['Similarity', 'Priority URL', 'Conflicting URL', 'System Action'];
+    const rows = results.map(r => [
+      `${r.similarity}%`,
+      r.priorityUrl,
+      r.conflictingUrl,
+      r.systemAction
+    ]);
+    const csvContent = [header, ...rows].map(e => e.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'audit_results.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const downloadPDF = () => {
+    if (results.length === 0) return;
+    const doc = new jsPDF();
+    doc.text('Conflict Roadmap', 14, 15);
+    autoTable(doc, {
+      head: [['Similarity', 'Priority URL', 'Conflicting URL', 'System Action']],
+      body: results.map(r => [
+        `${r.similarity}%`,
+        r.priorityUrl,
+        r.conflictingUrl,
+        r.systemAction
+      ]),
+      startY: 20,
+    });
+    doc.save('audit_results.pdf');
   };
 
   return (
@@ -202,7 +241,7 @@ export default function AnalyzePage() {
         {status === 'completed' && results.length > 0 && (
           <div className="max-w-7xl mx-auto">
             {/* Stats Summary */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 mb-6 sm:mb-8">
               <div className="border border-[#E5E7EB] p-6 hover:border-black transition-all">
                 <div className="flex items-center gap-3 mb-2">
                   <AlertTriangle size={20} className="text-black" />
@@ -226,18 +265,6 @@ export default function AnalyzePage() {
                   {(results.reduce((acc, r) => acc + r.similarity, 0) / results.length).toFixed(1)}%
                 </p>
               </div>
-
-              <div className="border border-[#E5E7EB] p-6 hover:border-black transition-all">
-                <div className="flex items-center gap-3 mb-2">
-                  <Zap size={20} className="text-black" />
-                  <h3 className="text-[#9CA3AF] text-[12px] uppercase tracking-wider">
-                    Analysis Time
-                  </h3>
-                </div>
-                <p className="text-black text-[32px] font-mono" style={{ fontWeight: 600 }}>
-                  6.2s
-                </p>
-              </div>
             </div>
 
             {/* Export Buttons */}
@@ -246,12 +273,12 @@ export default function AnalyzePage() {
                 Conflict Roadmap
               </h2>
               <div className="flex gap-3 sm:gap-4 w-full sm:w-auto">
-                <button className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 border border-[#E5E7EB] text-black font-mono text-[12px] sm:text-[13px] bg-transparent cursor-pointer hover:border-black hover:bg-black hover:text-white transition-all flex-1 sm:flex-initial">
+                <button onClick={downloadCSV} className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 border border-[#E5E7EB] text-black font-mono text-[12px] sm:text-[13px] bg-transparent cursor-pointer hover:border-black hover:bg-black hover:text-white transition-all flex-1 sm:flex-initial">
                   <Download size={14} />
                   <span className="hidden sm:inline">download csv</span>
                   <span className="sm:hidden">csv</span>
                 </button>
-                <button className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 border border-[#E5E7EB] text-black font-mono text-[12px] sm:text-[13px] bg-transparent cursor-pointer hover:border-black hover:bg-black hover:text-white transition-all flex-1 sm:flex-initial">
+                <button onClick={downloadPDF} className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 border border-[#E5E7EB] text-black font-mono text-[12px] sm:text-[13px] bg-transparent cursor-pointer hover:border-black hover:bg-black hover:text-white transition-all flex-1 sm:flex-initial">
                   <FileDown size={14} />
                   <span className="hidden sm:inline">download pdf</span>
                   <span className="sm:hidden">pdf</span>
@@ -294,8 +321,18 @@ export default function AnalyzePage() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-black font-mono text-[11px] sm:text-[13px]">{row.priorityUrl}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-[#6B7280] font-mono text-[11px] sm:text-[13px]">{row.conflictingUrl}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-black font-mono text-[11px] sm:text-[13px]">
+                        <a href={row.priorityUrl} target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1">
+                          {row.priorityUrl}
+                          <ExternalLink size={12} />
+                        </a>
+                      </td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-[#6B7280] font-mono text-[11px] sm:text-[13px]">
+                        <a href={row.conflictingUrl} target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1">
+                          {row.conflictingUrl}
+                          <ExternalLink size={12} />
+                        </a>
+                      </td>
                       <td className="px-3 sm:px-6 py-3 sm:py-4">
                         <span className="inline-block px-2 sm:px-3 py-1 border border-black text-black text-[10px] sm:text-[12px] font-mono whitespace-nowrap">
                           {row.systemAction}
